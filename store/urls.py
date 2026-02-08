@@ -1,12 +1,20 @@
+# store/urls.py
 from django.urls import path
-from .views import ProductListCreate, ProductDetail,MyProductsView,FavoriteListView,FavoriteCreateDestroyView,OrderCreateView,WeChatPayView
+from .views import (
+    ProductListCreate, ProductDetail, MyProductsView,
+    FavoriteListView, FavoriteCreateDestroyView,
+    MyOrdersView, SellerOrdersView, OrderCreateView, OrderUpdateView
+)
 
 urlpatterns = [
     path('products/', ProductListCreate.as_view()),
     path('products/<int:pk>/', ProductDetail.as_view()),
-    path('my-products/', MyProductsView.as_view(), name='my-products'),
-    path('favorites/', FavoriteListView.as_view(), name='favorite-list'),
-    path('favorite/', FavoriteCreateDestroyView.as_view(), name='favorite-create-destroy'),
-path('orders/', OrderCreateView.as_view(), name='order-create'),
-    path('orders/pay/', WeChatPayView.as_view(), name='order-pay'),
+    path('my-products/', MyProductsView.as_view()),
+    path('favorites/', FavoriteListView.as_view()),
+    path('favorite/', FavoriteCreateDestroyView.as_view()),
+    # 新增订单路由
+    path('orders/', OrderCreateView.as_view()),
+    path('orders/<int:pk>/', OrderUpdateView.as_view()),
+    path('orders/my/', MyOrdersView.as_view()),
+    path('orders/seller/', SellerOrdersView.as_view()),
 ]
