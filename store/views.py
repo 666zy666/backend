@@ -136,3 +136,27 @@ class OrderUpdateView(APIView):
         order.save()
         serializer = OrderSerializer(order, context={'request': request})
         return Response(serializer.data)
+
+
+class SimulatePayView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        order_id = request.data.get('order_id')
+        if not order_id:
+            return Response({"detail": "缺少 order_id"}, status=400)
+
+        order = get_object_or_404(Order, id=order_id, buyer=request.user, status='pending')
+
+        # 模拟支付成功
+        order.status = 'paid'
+        order.paid_at = timezone.now()
+        order.transaction_id = f"SIM-{uuid.uuid4().hex[:16]}"  # 模拟交易号
+        order.save()
+
+        serializer = OrderSerializer(order, context={'request': request})
+        return Response({
+            "code": 0,
+            "msg": "支付成功（模拟）",
+            "data": serializer.data
+        })
