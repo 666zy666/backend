@@ -3,7 +3,7 @@ from django.urls import path
 from .views import (
     ProductListCreate, ProductDetail, MyProductsView,
     FavoriteListView, FavoriteCreateDestroyView,
-    MyOrdersView, SellerOrdersView, OrderCreateView, OrderUpdateView,SimulatePayView
+    MyOrdersView, SellerOrdersView, OrderCreateView, OrderUpdateView,SimulatePayView,ProductSearchView
 )
 
 urlpatterns = [
@@ -18,4 +18,5 @@ urlpatterns = [
     path('orders/my/', MyOrdersView.as_view()),
     path('orders/seller/', SellerOrdersView.as_view()),
 path('orders/simulate-pay/', SimulatePayView.as_view(), name='simulate-pay'),
+path('products/search/', ProductSearchView.as_view(), name='product-search'),
 ]

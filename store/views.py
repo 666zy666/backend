@@ -8,8 +8,10 @@ from rest_framework.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from .models import Category, Product, ProductImage, Favorite, Order
+from rest_framework.pagination import PageNumberPagination
 from .serializers import CategorySerializer, ProductSerializer, FavoriteSerializer, OrderSerializer
 import uuid
+from django.db.models import Q
 
 class ProductListCreate(generics.ListCreateAPIView):
     queryset = Product.objects.filter(is_active=True).order_by('-created_at')
@@ -160,3 +162,52 @@ class SimulatePayView(APIView):
             "msg": "支付成功（模拟）",
             "data": serializer.data
         })
+
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 50
+
+
+class ProductSearchView(generics.ListAPIView):
+    serializer_class = ProductSerializer
+    permission_classes = [AllowAny]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        queryset = Product.objects.filter(is_active=True)
+
+        # 关键词搜索
+        keyword = self.request.query_params.get('keyword', '').strip()
+        if keyword:
+            queryset = queryset.filter(
+                Q(title__icontains=keyword) |
+                Q(description__icontains=keyword) |
+                Q(brand__icontains=keyword) |
+                Q(model_number__icontains=keyword) |
+                Q(machinery_type__icontains=keyword)
+            )
+
+        # 分类筛选
+        category = self.request.query_params.get('category')
+        if category:
+            queryset = queryset.filter(category_id=category)
+
+        # 价格区间（可选）
+        min_price = self.request.query_params.get('min_price')
+        max_price = self.request.query_params.get('max_price')
+        if min_price:
+            queryset = queryset.filter(price__gte=min_price)
+        if max_price:
+            queryset = queryset.filter(price__lte=max_price)
+
+        # 排序
+        sort = self.request.query_params.get('sort', '-created_at')
+        if sort == 'price_asc':
+            queryset = queryset.order_by('price')
+        elif sort == 'price_desc':
+            queryset = queryset.order_by('-price')
+        else:
+            queryset = queryset.order_by('-created_at')
+
+        return queryset
