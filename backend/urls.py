@@ -10,6 +10,7 @@ urlpatterns = [
     path('api/account/', include('account.urls')),
 
 
+
 ]
 
 if settings.DEBUG:

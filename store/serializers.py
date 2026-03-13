@@ -1,6 +1,6 @@
 # store/serializers.py
 from rest_framework import serializers
-from .models import Category, Product, ProductImage, Favorite, Order
+from .models import Category, Product, ProductImage, Favorite, Order,Banner
 
 class ProductImageSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField()
@@ -52,3 +52,16 @@ class OrderSerializer(serializers.ModelSerializer):
         model = Order
         fields = ['id', 'buyer', 'buyer_username', 'seller', 'seller_username', 'product', 'product_title', 'product_image', 'price', 'status', 'created_at', 'paid_at', 'shipped_at', 'completed_at', 'tracking_number', 'shipping_company']
         read_only_fields = ['buyer', 'seller', 'product', 'price', 'created_at', 'paid_at', 'shipped_at', 'completed_at']
+
+class BannerSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+
+    def get_image(self, obj):
+        request = self.context.get('request')
+        if obj.image and request:
+            return request.build_absolute_uri(obj.image.url)
+        return None
+
+    class Meta:
+        model = Banner
+        fields = ['id', 'title', 'image', 'link', 'order']

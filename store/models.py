@@ -83,3 +83,19 @@ class Order(models.Model):
 
     def __str__(self):
         return f"Order {self.id} by {self.buyer}"
+
+class Banner(models.Model):
+    title = models.CharField(max_length=100, blank=True, verbose_name="标题")
+    image = models.ImageField(upload_to='banners/%Y/%m/%d/', verbose_name="轮播图")
+    link = models.CharField(max_length=255, blank=True, null=True, verbose_name="跳转链接")
+    order = models.PositiveIntegerField(default=0, verbose_name="排序（越小越靠前）")
+    is_active = models.BooleanField(default=True, verbose_name="是否显示")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['order']
+        verbose_name = "轮播图"
+        verbose_name_plural = "轮播图"
+
+    def __str__(self):
+        return self.title or f"Banner {self.id}"

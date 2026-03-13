@@ -7,9 +7,9 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from .models import Category, Product, ProductImage, Favorite, Order
+from .models import Category, Product, ProductImage, Favorite, Order,Banner
 from rest_framework.pagination import PageNumberPagination
-from .serializers import CategorySerializer, ProductSerializer, FavoriteSerializer, OrderSerializer
+from .serializers import CategorySerializer, ProductSerializer, FavoriteSerializer, OrderSerializer,BannerSerializer
 import uuid
 from django.db.models import Q
 
@@ -177,6 +177,7 @@ class ProductSearchView(generics.ListAPIView):
     def get_queryset(self):
         queryset = Product.objects.filter(is_active=True)
 
+
         # 关键词搜索
         keyword = self.request.query_params.get('keyword', '').strip()
         if keyword:
@@ -203,6 +204,8 @@ class ProductSearchView(generics.ListAPIView):
 
         # 排序
         sort = self.request.query_params.get('sort', '-created_at')
+        print("收到 sort 参数:", sort)
+        print("最终排序:", queryset.query.order_by)
         if sort == 'price_asc':
             queryset = queryset.order_by('price')
         elif sort == 'price_desc':
@@ -210,4 +213,15 @@ class ProductSearchView(generics.ListAPIView):
         else:
             queryset = queryset.order_by('-created_at')
 
+
+
+
         return queryset
+
+class BannerListView(generics.ListAPIView):
+    queryset = Banner.objects.filter(is_active=True).order_by('order')
+    serializer_class = BannerSerializer
+    permission_classes = [AllowAny]
+
+
+
