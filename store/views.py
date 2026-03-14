@@ -1,5 +1,5 @@
 # store/views.py
-from rest_framework import generics, status
+from rest_framework import generics, status,serializers
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -46,37 +46,36 @@ class MyProductsView(APIView):
         serializer = ProductSerializer(products, many=True, context={'request': request})
         return Response(serializer.data)
 
-class FavoriteListView(APIView):
+# 收藏商品
+class FavoriteCreateView(generics.CreateAPIView):
+    queryset = Favorite.objects.all()
+    serializer_class = FavoriteSerializer
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
-        favorites = Favorite.objects.filter(user=request.user).order_by('-created_at')
-        serializer = FavoriteSerializer(favorites, many=True, context={'request': request})
-        return Response(serializer.data)
-
-class FavoriteCreateDestroyView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        product_id = request.data.get('product_id')
-        if not product_id:
-            return Response({"detail": "缺少product_id"}, status=400)
+    def perform_create(self, serializer):
+        product_id = self.request.data.get('product')
         product = get_object_or_404(Product, id=product_id)
-        if Favorite.objects.filter(user=request.user, product=product).exists():
-            return Response({"detail": "已收藏"}, status=400)
-        favorite = Favorite.objects.create(user=request.user, product=product)
-        serializer = FavoriteSerializer(favorite, context={'request': request})
-        return Response(serializer.data, status=201)
+        # 避免重复收藏
+        if Favorite.objects.filter(user=self.request.user, product=product).exists():
+            raise serializers.ValidationError("已收藏")
+        serializer.save(user=self.request.user, product=product)
 
-    def delete(self, request):
-        product_id = request.data.get('product_id')
-        if not product_id:
-            return Response({"detail": "缺少product_id"}, status=400)
-        favorite = Favorite.objects.filter(user=request.user, product_id=product_id)
-        if not favorite.exists():
-            return Response({"detail": "未收藏"}, status=404)
-        favorite.delete()
-        return Response({"detail": "已取消收藏"}, status=204)
+# 取消收藏
+class FavoriteDeleteView(generics.DestroyAPIView):
+    queryset = Favorite.objects.all()
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        product_id = self.kwargs['product_id']
+        return get_object_or_404(Favorite, user=self.request.user, product_id=product_id)
+
+# 我的收藏列表
+class FavoriteListView(generics.ListAPIView):
+    serializer_class = FavoriteSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Favorite.objects.filter(user=self.request.user).order_by('-created_at')
 
 # 新增: 我的订单（买家视角）
 class MyOrdersView(APIView):

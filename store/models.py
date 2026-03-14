@@ -50,15 +50,16 @@ class ProductImage(models.Model):
 
 class Favorite(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='favorites')
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='favorited_by')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='favorites')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ('user', 'product')
-        ordering = ['-created_at']
+        unique_together = ('user', 'product')  # 防止重复收藏
+        verbose_name = "收藏"
+        verbose_name_plural = "收藏"
 
     def __str__(self):
-        return f"{self.user} favorites {self.product}"
+        return f"{self.user} 收藏了 {self.product.title}"
 
 class Order(models.Model):
     buyer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders_bought')
