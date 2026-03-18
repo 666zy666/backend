@@ -1,11 +1,17 @@
 # 密码登录account/views.py
 from django.contrib.auth import authenticate
 from rest_framework.views import APIView
-from rest_framework.response import Response
 from rest_framework.permissions import AllowAny,IsAuthenticated
 from rest_framework.authtoken.models import Token
 from django.contrib.auth.models import User
 import requests
+from rest_framework import generics, status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from django.contrib.auth import update_session_auth_hash
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
+from .serializers import UserProfileSerializer, ChangePasswordSerializer
 class PasswordLoginView(APIView):
     permission_classes = [AllowAny]
     def post(self, request):
@@ -122,3 +128,43 @@ class UpdateUserInfoView(APIView):
         user.save()
 
         return Response({"message": "用户信息更新成功"})
+
+class UserProfileView(generics.RetrieveUpdateAPIView):
+    """个人信息查看与修改"""
+    serializer_class = UserProfileSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        return self.request.user
+
+
+class ChangePasswordView(generics.GenericAPIView):
+    """修改密码"""
+    serializer_class = ChangePasswordSerializer
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        old_password = serializer.validated_data['old_password']
+
+        # 验证旧密码是否正确
+        if not user.check_password(old_password):
+            return Response({"old_password": "旧密码错误"}, status=status.HTTP_400_BAD_REQUEST)
+
+        new_password = serializer.validated_data['new_password']
+
+        # Django 密码强度验证
+        try:
+            validate_password(new_password, user)
+        except ValidationError as e:
+            return Response({"new_password": list(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 修改密码并保持登录状态
+        user.set_password(new_password)
+        user.save()
+        update_session_auth_hash(request, user)
+
+        return Response({"detail": "密码修改成功"}, status=status.HTTP_200_OK)
