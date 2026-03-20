@@ -77,13 +77,16 @@ class FavoriteListView(generics.ListAPIView):
     def get_queryset(self):
         return Favorite.objects.filter(user=self.request.user).order_by('-created_at')
 
-# 新增: 我的订单（买家视角）
+# 新增: 我的订单（买家视角，支持状态筛选）
 class MyOrdersView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        orders = Order.objects.filter(buyer=request.user).order_by('-created_at')
-        serializer = OrderSerializer(orders, many=True, context={'request': request})
+        queryset = Order.objects.filter(buyer=request.user).order_by('-created_at')
+        order_status = request.query_params.get('status', '').strip()
+        if order_status:
+            queryset = queryset.filter(status=order_status)
+        serializer = OrderSerializer(queryset, many=True, context={'request': request})
         return Response(serializer.data)
 
 # 新增: 待处理订单（卖家视角）
@@ -123,15 +126,15 @@ class OrderUpdateView(APIView):
         order = get_object_or_404(Order, pk=pk, seller=request.user)
         action = request.data.get('action')
         if action == 'ship':
-            order.status = 'shipped'
+            order.status = Order.STATUS_PENDING_RECEIPT
             order.shipped_at = timezone.now()
             order.shipping_company = request.data.get('shipping_company')
             order.tracking_number = request.data.get('tracking_number')
         elif action == 'complete':
-            order.status = 'completed'
+            order.status = Order.STATUS_COMPLETED
             order.completed_at = timezone.now()
         elif action == 'cancel':
-            order.status = 'cancelled'
+            order.status = Order.STATUS_CANCELLED
         else:
             return Response({"detail": "无效操作"}, status=400)
         order.save()
@@ -140,6 +143,7 @@ class OrderUpdateView(APIView):
 
 
 class SimulatePayView(APIView):
+    """已废弃：请使用 OrderPayView（/orders/<pk>/pay/）。保留此视图仅供旧版客户端兼容。"""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -147,10 +151,13 @@ class SimulatePayView(APIView):
         if not order_id:
             return Response({"detail": "缺少 order_id"}, status=400)
 
-        order = get_object_or_404(Order, id=order_id, buyer=request.user, status='pending')
+        # 兼容旧状态 'pending' 和新状态 'pending_payment'
+        order = get_object_or_404(Order, id=order_id, buyer=request.user)
+        if order.status not in ('pending', 'pending_payment'):
+            return Response({"detail": "仅待付款订单可以支付"}, status=400)
 
         # 模拟支付成功
-        order.status = 'paid'
+        order.status = Order.STATUS_PENDING_RECEIPT
         order.paid_at = timezone.now()
         order.transaction_id = f"SIM-{uuid.uuid4().hex[:16]}"  # 模拟交易号
         order.save()
@@ -161,6 +168,62 @@ class SimulatePayView(APIView):
             "msg": "支付成功（模拟）",
             "data": serializer.data
         })
+
+
+# ── 用户侧订单操作 ────────────────────────────────────────────
+
+class OrderPayView(APIView):
+    """订单支付：PENDING_PAYMENT → PENDING_RECEIPT"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        order = get_object_or_404(Order, pk=pk, buyer=request.user)
+        if order.status != Order.STATUS_PENDING_PAYMENT:
+            return Response(
+                {"detail": f"当前订单状态为「{order.get_status_display()}」，无法支付"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        order.status = Order.STATUS_PENDING_RECEIPT
+        order.paid_at = timezone.now()
+        order.transaction_id = f"SIM-{uuid.uuid4().hex[:16]}"
+        order.save()
+        serializer = OrderSerializer(order, context={'request': request})
+        return Response({"detail": "支付成功", "data": serializer.data})
+
+
+class OrderCancelView(APIView):
+    """取消订单：PENDING_PAYMENT → CANCELLED"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        order = get_object_or_404(Order, pk=pk, buyer=request.user)
+        if order.status != Order.STATUS_PENDING_PAYMENT:
+            return Response(
+                {"detail": f"当前订单状态为「{order.get_status_display()}」，无法取消"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        order.status = Order.STATUS_CANCELLED
+        order.save()
+        serializer = OrderSerializer(order, context={'request': request})
+        return Response({"detail": "订单已取消", "data": serializer.data})
+
+
+class OrderConfirmView(APIView):
+    """确认收货：PENDING_RECEIPT → COMPLETED"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        order = get_object_or_404(Order, pk=pk, buyer=request.user)
+        if order.status != Order.STATUS_PENDING_RECEIPT:
+            return Response(
+                {"detail": f"当前订单状态为「{order.get_status_display()}」，无法确认收货"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        order.status = Order.STATUS_COMPLETED
+        order.completed_at = timezone.now()
+        order.save()
+        serializer = OrderSerializer(order, context={'request': request})
+        return Response({"detail": "确认收货成功，订单已完成", "data": serializer.data})
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 10
@@ -203,8 +266,6 @@ class ProductSearchView(generics.ListAPIView):
 
         # 排序
         sort = self.request.query_params.get('sort', '-created_at')
-        print("收到 sort 参数:", sort)
-        print("最终排序:", queryset.query.order_by)
         if sort == 'price_asc':
             queryset = queryset.order_by('price')
         elif sort == 'price_desc':
