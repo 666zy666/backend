@@ -11,7 +11,12 @@ from rest_framework.response import Response
 from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+
+from .models import UserProfile
 from .serializers import UserProfileSerializer, ChangePasswordSerializer
+from rest_framework.parsers import MultiPartParser, FormParser,JSONParser
+from django.core.files.storage import default_storage
+from django.core.files.base import ContentFile
 class PasswordLoginView(APIView):
     permission_classes = [AllowAny]
     def post(self, request):
@@ -129,14 +134,35 @@ class UpdateUserInfoView(APIView):
 
         return Response({"message": "用户信息更新成功"})
 
+
 class UserProfileView(generics.RetrieveUpdateAPIView):
-    """个人信息查看与修改"""
     serializer_class = UserProfileSerializer
     permission_classes = [IsAuthenticated]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def get_object(self):
         return self.request.user
 
+    def post(self, request, *args, **kwargs):
+        return self.partial_update(request, *args, **kwargs)
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+
+        # 处理头像上传
+        if 'avatar' in self.request.FILES:
+            uploaded_file = self.request.FILES['avatar']
+            filename = f"avatars/{user.username}_{uploaded_file.name}"
+            saved_path = default_storage.save(filename, ContentFile(uploaded_file.read()))
+            profile.avatar = default_storage.url(saved_path)
+            profile.save()
+
+        # 🔥 管理员用户名保护（普通用户可以改）
+        if (user.is_staff or user.is_superuser) and 'username' in serializer.validated_data:
+            serializer.validated_data.pop('username')
+
+        serializer.save()
 
 class ChangePasswordView(generics.GenericAPIView):
     """修改密码"""

@@ -2,16 +2,25 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
-
+from .models import UserProfile
 
 class UserProfileSerializer(serializers.ModelSerializer):
-    """个人信息编辑序列化器"""
+    avatar = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name']
-        read_only_fields = ['id', 'username']   # 用户名不允许修改
+        fields = ['id', 'username', 'email', 'first_name', 'avatar']
+        read_only_fields = ['id']          # 只读 id，其它字段都可修改
 
-
+    def get_avatar(self, obj):
+        request = self.context.get('request')
+        try:
+            profile = obj.profile
+            if profile.avatar:
+                return request.build_absolute_uri(profile.avatar) if request else profile.avatar
+            return None
+        except:
+            return None
 class ChangePasswordSerializer(serializers.Serializer):
     """修改密码序列化器"""
     old_password = serializers.CharField(required=True, write_only=True)
