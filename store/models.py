@@ -70,6 +70,7 @@ class Order(models.Model):
     STATUS_PENDING_RECEIPT = 'pending_receipt'
     STATUS_COMPLETED = 'completed'
     STATUS_CANCELLED = 'cancelled'
+
     STATUS_CHOICES = [
         (STATUS_PENDING_PAYMENT, '待付款'),
         (STATUS_PENDING_RECEIPT, '待收货'),
@@ -80,6 +81,7 @@ class Order(models.Model):
         ('paid', '已支付'),
         ('shipped', '已发货'),
     ]
+
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,

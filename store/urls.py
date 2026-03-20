@@ -7,6 +7,7 @@ from .views import (
     SimulatePayView, OrderPayView, OrderCancelView, OrderConfirmView,
     ProductSearchView, BannerListView,
 )
+
 urlpatterns = [
     path('products/', ProductListCreate.as_view()),
     path('products/search/', ProductSearchView.as_view(), name='product-search'),
@@ -16,16 +17,10 @@ urlpatterns = [
     path('favorites/add/', FavoriteCreateView.as_view(), name='favorite-add'),
     path('favorites/remove/<int:product_id>/', FavoriteDeleteView.as_view(), name='favorite-remove'),
     path('banners/', BannerListView.as_view(), name='banner-list'),
-
     # 订单
     path('orders/', OrderCreateView.as_view()),
     path('orders/my/', MyOrdersView.as_view()),
     path('orders/seller/', SellerOrdersView.as_view()),
-    path('orders/simulate-pay/', SimulatePayView.as_view(), name='simulate-pay'),
-    path('orders/<int:pk>/', OrderUpdateView.as_view()),
-    path('orders/my/', MyOrdersView.as_view()),
-    path('orders/seller/', SellerOrdersView.as_view()),
-
     path('orders/simulate-pay/', SimulatePayView.as_view(), name='simulate-pay'),
     path('orders/<int:pk>/', OrderUpdateView.as_view()),
     path('orders/<int:pk>/pay/', OrderPayView.as_view(), name='order-pay'),
