@@ -66,10 +66,24 @@ class Order(models.Model):
     seller = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders_sold')
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     price = models.DecimalField(max_digits=12, decimal_places=2)
+    STATUS_PENDING_PAYMENT = 'pending_payment'
+    STATUS_PENDING_RECEIPT = 'pending_receipt'
+    STATUS_COMPLETED = 'completed'
+    STATUS_CANCELLED = 'cancelled'
+    STATUS_CHOICES = [
+        (STATUS_PENDING_PAYMENT, '待付款'),
+        (STATUS_PENDING_RECEIPT, '待收货'),
+        (STATUS_COMPLETED, '已完成'),
+        (STATUS_CANCELLED, '已取消'),
+        # 兼容旧数据保留
+        ('pending', '待支付'),
+        ('paid', '已支付'),
+        ('shipped', '已发货'),
+    ]
     status = models.CharField(
         max_length=20,
-        choices=[('pending', '待支付'), ('paid', '已支付'), ('shipped', '已发货'), ('completed', '已完成'), ('cancelled', '已取消')],
-        default='pending'
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING_PAYMENT
     )
     created_at = models.DateTimeField(auto_now_add=True)
     paid_at = models.DateTimeField(null=True, blank=True)
