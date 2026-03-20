@@ -126,15 +126,15 @@ class OrderUpdateView(APIView):
         order = get_object_or_404(Order, pk=pk, seller=request.user)
         action = request.data.get('action')
         if action == 'ship':
-            order.status = 'shipped'
+            order.status = Order.STATUS_PENDING_RECEIPT
             order.shipped_at = timezone.now()
             order.shipping_company = request.data.get('shipping_company')
             order.tracking_number = request.data.get('tracking_number')
         elif action == 'complete':
-            order.status = 'completed'
+            order.status = Order.STATUS_COMPLETED
             order.completed_at = timezone.now()
         elif action == 'cancel':
-            order.status = 'cancelled'
+            order.status = Order.STATUS_CANCELLED
         else:
             return Response({"detail": "无效操作"}, status=400)
         order.save()
@@ -265,8 +265,6 @@ class ProductSearchView(generics.ListAPIView):
 
         # 排序
         sort = self.request.query_params.get('sort', '-created_at')
-        print("收到 sort 参数:", sort)
-        print("最终排序:", queryset.query.order_by)
         if sort == 'price_asc':
             queryset = queryset.order_by('price')
         elif sort == 'price_desc':

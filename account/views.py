@@ -1,4 +1,5 @@
 # 密码登录account/views.py
+from django.conf import settings
 from django.contrib.auth import authenticate
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
@@ -85,8 +86,8 @@ class WeChatLoginView(APIView):
         # 微信官方接口换取 openid
         url = "https://api.weixin.qq.com/sns/jscode2session"
         params = {
-            "appid": 'wxb99c847d498cfbbc',       # ← 你的小程序AppID
-            "secret": '8098568c7622223a6b633e4a9b995226',  # ← 你的AppSecret
+            "appid": settings.WX_APP_ID,
+            "secret": settings.WX_APP_SECRET,
             "js_code": code,
             "grant_type": "authorization_code"
         }
@@ -303,6 +304,3 @@ class AdminOrderListView(generics.ListAPIView):
             queryset = queryset.filter(status=order_status)
         serializer = OrderSerializer(queryset, many=True, context={'request': request})
         return Response(serializer.data)
-
-
-        return Response({"detail": "密码修改成功"}, status=status.HTTP_200_OK)
