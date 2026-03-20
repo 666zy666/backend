@@ -143,6 +143,7 @@ class OrderUpdateView(APIView):
 
 
 class SimulatePayView(APIView):
+    """已废弃：请使用 OrderPayView（/orders/<pk>/pay/）。保留此视图仅供旧版客户端兼容。"""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
