@@ -41,6 +41,7 @@ class OrderSerializer(serializers.ModelSerializer):
     product_image = serializers.SerializerMethodField(read_only=True)
     seller_username = serializers.CharField(source='seller.username', read_only=True)
     buyer_username = serializers.CharField(source='buyer.username', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
 
     def get_product_image(self, obj):
         request = self.context.get('request')
@@ -50,8 +51,8 @@ class OrderSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Order
-        fields = ['id', 'buyer', 'buyer_username', 'seller', 'seller_username', 'product', 'product_title', 'product_image', 'price', 'status', 'created_at', 'paid_at', 'shipped_at', 'completed_at', 'tracking_number', 'shipping_company']
-        read_only_fields = ['buyer', 'seller', 'product', 'price', 'created_at', 'paid_at', 'shipped_at', 'completed_at']
+        fields = ['id', 'buyer', 'buyer_username', 'seller', 'seller_username', 'product', 'product_title', 'product_image', 'price', 'status', 'status_display', 'created_at', 'paid_at', 'shipped_at', 'completed_at', 'tracking_number', 'shipping_company']
+        read_only_fields = ['buyer', 'seller', 'product', 'price', 'status', 'status_display', 'created_at', 'paid_at', 'shipped_at', 'completed_at']
 
 class BannerSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField()

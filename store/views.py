@@ -136,14 +136,29 @@ class OrderUpdateView(APIView):
         order = get_object_or_404(Order, pk=pk, seller=request.user)
         action = request.data.get('action')
         if action == 'ship':
-            order.status = Order.STATUS_PENDING_RECEIPT
+            # 发货：仅待收货（买家已付款）状态可添加物流信息
+            if order.status != Order.STATUS_PENDING_RECEIPT:
+                return Response(
+                    {"detail": f"当前订单状态为「{order.get_status_display()}」，无法标记发货"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             order.shipped_at = timezone.now()
             order.shipping_company = request.data.get('shipping_company')
             order.tracking_number = request.data.get('tracking_number')
         elif action == 'complete':
+            if order.status != Order.STATUS_PENDING_RECEIPT:
+                return Response(
+                    {"detail": f"当前订单状态为「{order.get_status_display()}」，无法完成订单"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             order.status = Order.STATUS_COMPLETED
             order.completed_at = timezone.now()
         elif action == 'cancel':
+            if order.status != Order.STATUS_PENDING_PAYMENT:
+                return Response(
+                    {"detail": f"当前订单状态为「{order.get_status_display()}」，卖家仅可在待付款时取消订单"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             order.status = Order.STATUS_CANCELLED
         else:
             return Response({"detail": "无效操作"}, status=400)
