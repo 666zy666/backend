@@ -4,7 +4,7 @@ from .views import (
     PasswordLoginView, RegisterView, WeChatLoginView,
     UserProfileView, ChangePasswordView,
     AddressListCreateView, AddressDetailView, SetDefaultAddressView,
-    AdminStatsView, AdminUserListView, AdminProductListView, AdminOrderListView,
+    AdminStatsView, AdminUserListView, AdminProductListView, AdminOrderListView, AvatarUploadView,
 )
 
 urlpatterns = [
@@ -18,7 +18,7 @@ urlpatterns = [
     path('addresses/', AddressListCreateView.as_view(), name='address-list'),
     path('addresses/<int:pk>/', AddressDetailView.as_view(), name='address-detail'),
     path('addresses/<int:pk>/set-default/', SetDefaultAddressView.as_view(), name='address-set-default'),
-
+    path('avatar/', AvatarUploadView.as_view()),
     # 管理员接口
     path('admin/stats/', AdminStatsView.as_view(), name='admin-stats'),
     path('admin/users/', AdminUserListView.as_view(), name='admin-users'),

@@ -6,28 +6,38 @@ from .models import UserProfile, Address
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
-    """个人信息查看与编辑序列化器（含手机号/头像）"""
     phone = serializers.CharField(source='userprofile.phone', default='', allow_blank=True, required=False)
-    avatar = serializers.URLField(source='userprofile.avatar', default='', allow_blank=True, required=False)
+    avatar = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'phone', 'avatar']
-        read_only_fields = ['id', 'username']
+        read_only_fields = ['id', 'username', 'avatar']
+
+    def get_avatar(self, obj):
+        request = self.context.get('request')
+        profile = getattr(obj, 'userprofile', None)
+        if not profile or not profile.avatar:
+            return ''
+        try:
+            url = profile.avatar.url
+            return request.build_absolute_uri(url) if request else url
+        except Exception:
+            return ''
 
     def update(self, instance, validated_data):
         profile_data = validated_data.pop('userprofile', {})
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
+
         if profile_data:
             profile, _ = UserProfile.objects.get_or_create(user=instance)
-            for attr, value in profile_data.items():
-                setattr(profile, attr, value)
-            profile.save()
+            if 'phone' in profile_data:
+                profile.phone = profile_data['phone']
+                profile.save()
+
         return instance
-
-
 class ChangePasswordSerializer(serializers.Serializer):
     """修改密码序列化器"""
     old_password = serializers.CharField(required=True, write_only=True)

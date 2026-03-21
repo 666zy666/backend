@@ -15,7 +15,7 @@ from django.db.models import Q, Sum
 from .models import UserProfile, Address
 from .serializers import UserProfileSerializer, ChangePasswordSerializer, AddressSerializer
 from store.models import Product, Order
-
+from rest_framework.parsers import MultiPartParser, FormParser
 
 class PasswordLoginView(APIView):
     permission_classes = [AllowAny]
@@ -304,3 +304,26 @@ class AdminOrderListView(generics.ListAPIView):
             queryset = queryset.filter(status=order_status)
         serializer = OrderSerializer(queryset, many=True, context={'request': request})
         return Response(serializer.data)
+
+
+class AvatarUploadView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        file_obj = request.FILES.get('avatar')
+        if not file_obj:
+            return Response({"detail": "未上传 avatar 文件"}, status=status.HTTP_400_BAD_REQUEST)
+
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        profile.avatar = file_obj
+        profile.save(update_fields=['avatar'])
+
+        # 重新从数据库读取，确保拿到已持久化字段（不是内存文件对象）
+        profile.refresh_from_db()
+
+        avatar_url = ''
+        if profile.avatar:
+            avatar_url = request.build_absolute_uri(profile.avatar.url)
+
+        return Response({"avatar": avatar_url}, status=status.HTTP_200_OK)

@@ -122,6 +122,16 @@ class OrderCreateView(APIView):
 class OrderUpdateView(APIView):
     permission_classes = [IsAuthenticated]
 
+    # 新增：订单详情（买家或卖家可查看）
+    def get(self, request, pk):
+        order = get_object_or_404(
+            Order.objects.filter(Q(buyer=request.user) | Q(seller=request.user)),
+            pk=pk
+        )
+        serializer = OrderSerializer(order, context={'request': request})
+        return Response(serializer.data)
+
+    # 原有：卖家处理订单
     def patch(self, request, pk):
         order = get_object_or_404(Order, pk=pk, seller=request.user)
         action = request.data.get('action')
@@ -140,7 +150,6 @@ class OrderUpdateView(APIView):
         order.save()
         serializer = OrderSerializer(order, context={'request': request})
         return Response(serializer.data)
-
 
 class SimulatePayView(APIView):
     """已废弃：请使用 OrderPayView（/orders/<pk>/pay/）。保留此视图仅供旧版客户端兼容。"""

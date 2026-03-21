@@ -4,8 +4,14 @@ from django.contrib.auth.models import User
 class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     phone = models.CharField(max_length=11, blank=True)
-    avatar = models.URLField(blank=True)
-    wechat_openid = models.CharField(max_length=64, unique=True, blank=True)
+    avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
+    wechat_openid = models.CharField(
+        max_length=64,
+        unique=True,
+        null=True,
+        blank=True,
+        default=None
+    )
     is_verified = models.BooleanField(default=False)
 
     def __str__(self):
