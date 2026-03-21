@@ -7,7 +7,7 @@ from .models import UserProfile, Address
 
 class PersonalCenterTest(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user('testuser', password='pass1234', email='test@example.com')
+        self.user = User.objects.create_user('testuser', password='TestP@ss1234!', email='test@example.com')
         self.token = Token.objects.create(user=self.user)
         self.client = APIClient()
         self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
@@ -25,25 +25,25 @@ class PersonalCenterTest(TestCase):
 
     def test_change_password_success(self):
         resp = self.client.post('/api/account/change-password/', {
-            'old_password': 'pass1234',
-            'new_password': 'NewPass1234!',
-            'confirm_password': 'NewPass1234!'
+            'old_password': 'TestP@ss1234!',
+            'new_password': 'NewSecureP@ss9!',
+            'confirm_password': 'NewSecureP@ss9!'
         }, format='json')
         self.assertEqual(resp.status_code, 200)
 
     def test_change_password_wrong_old(self):
         resp = self.client.post('/api/account/change-password/', {
-            'old_password': 'wrongpass',
-            'new_password': 'NewPass1234!',
-            'confirm_password': 'NewPass1234!'
+            'old_password': 'WrongP@ss!',
+            'new_password': 'NewSecureP@ss9!',
+            'confirm_password': 'NewSecureP@ss9!'
         }, format='json')
         self.assertEqual(resp.status_code, 400)
 
     def test_change_password_mismatch(self):
         resp = self.client.post('/api/account/change-password/', {
-            'old_password': 'pass1234',
-            'new_password': 'NewPass1234!',
-            'confirm_password': 'DifferentPass!'
+            'old_password': 'TestP@ss1234!',
+            'new_password': 'NewSecureP@ss9!',
+            'confirm_password': 'DifferentP@ss9!'
         }, format='json')
         self.assertEqual(resp.status_code, 400)
 
@@ -79,7 +79,7 @@ class PersonalCenterTest(TestCase):
         self.assertEqual(resp.status_code, 204)
 
     def test_address_isolation(self):
-        other_user = User.objects.create_user('other', password='pass1234')
+        other_user = User.objects.create_user('other', password='TestP@ss1234!')
         other_token = Token.objects.create(user=other_user)
         Address.objects.create(
             user=other_user, recipient_name='李四', phone='13900139000',
@@ -92,8 +92,8 @@ class PersonalCenterTest(TestCase):
 
 class AdminAPITest(TestCase):
     def setUp(self):
-        self.admin = User.objects.create_superuser('admin', password='admin1234', email='admin@example.com')
-        self.user = User.objects.create_user('regular', password='pass1234')
+        self.admin = User.objects.create_superuser('admin', password='AdminP@ss1234!', email='admin@example.com')
+        self.user = User.objects.create_user('regular', password='UserP@ss1234!')
         self.admin_token = Token.objects.create(user=self.admin)
         self.user_token = Token.objects.create(user=self.user)
         self.client = APIClient()

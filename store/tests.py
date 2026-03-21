@@ -101,7 +101,7 @@ class OrderStatusFlowTest(TestCase):
         self.assertEqual(resp.status_code, 400)
 
     def test_seller_ship_validates_state(self):
-        # ship requires pending_receipt
+        # ship requires PENDING_RECEIPT state; should fail when order is in PENDING_PAYMENT
         order = self._make_order()  # pending_payment
         self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.seller_token.key}')
         resp = self.client.patch(f'/api/store/orders/{order.pk}/', {'action': 'ship'}, format='json')
