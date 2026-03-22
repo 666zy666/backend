@@ -5,7 +5,7 @@ from .views import (
     FavoriteListView, FavoriteCreateView, FavoriteDeleteView,
     MyOrdersView, SellerOrdersView, OrderCreateView, OrderUpdateView,
     SimulatePayView, OrderPayView, OrderCancelView, OrderConfirmView,
-    ProductSearchView, BannerListView,
+    ProductSearchView, BannerListView, AdminOrderShipView,
 )
 
 urlpatterns = [
@@ -26,4 +26,6 @@ urlpatterns = [
     path('orders/<int:pk>/pay/', OrderPayView.as_view(), name='order-pay'),
     path('orders/<int:pk>/cancel/', OrderCancelView.as_view(), name='order-cancel'),
     path('orders/<int:pk>/confirm/', OrderConfirmView.as_view(), name='order-confirm'),
+    # 管理员订单操作
+    path('orders/<int:pk>/ship/', AdminOrderShipView.as_view(), name='admin-order-ship'),
 ]

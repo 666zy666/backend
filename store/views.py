@@ -2,7 +2,7 @@
 from rest_framework import generics, status,serializers
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404
@@ -109,11 +109,31 @@ class OrderCreateView(APIView):
         product = get_object_or_404(Product, id=product_id)
         if product.seller == request.user:
             return Response({"detail": "不能购买自己的商品"}, status=400)
+
+        # Build address snapshot if address_id provided
+        address_snapshot = None
+        address_id = request.data.get('address_id')
+        if address_id:
+            from account.models import Address
+            addr = Address.objects.filter(pk=address_id, user=request.user).first()
+            if addr:
+                address_snapshot = {
+                    'recipient_name': addr.recipient_name,
+                    'phone': addr.phone,
+                    'province': addr.province,
+                    'city': addr.city,
+                    'district': addr.district,
+                    'detail': addr.detail,
+                }
+
+        order_no = f"ORD{uuid.uuid4().hex[:16].upper()}"
         order = Order.objects.create(
             buyer=request.user,
             seller=product.seller,
             product=product,
-            price=product.price
+            price=product.price,
+            order_no=order_no,
+            address_snapshot=address_snapshot,
         )
         serializer = OrderSerializer(order, context={'request': request})
         return Response(serializer.data, status=201)
@@ -182,17 +202,17 @@ class SimulatePayView(APIView):
 # ── 用户侧订单操作 ────────────────────────────────────────────
 
 class OrderPayView(APIView):
-    """订单支付：PENDING_PAYMENT → PENDING_RECEIPT"""
+    """订单支付：PENDING_PAYMENT → PENDING_SHIPMENT"""
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
         order = get_object_or_404(Order, pk=pk, buyer=request.user)
-        if order.status != Order.STATUS_PENDING_PAYMENT:
+        if not order.can_transition_to(Order.STATUS_PENDING_SHIPMENT):
             return Response(
                 {"detail": f"当前订单状态为「{order.get_status_display()}」，无法支付"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        order.status = Order.STATUS_PENDING_RECEIPT
+        order.status = Order.STATUS_PENDING_SHIPMENT
         order.paid_at = timezone.now()
         order.transaction_id = f"SIM-{uuid.uuid4().hex[:16]}"
         order.save()
@@ -206,12 +226,13 @@ class OrderCancelView(APIView):
 
     def post(self, request, pk):
         order = get_object_or_404(Order, pk=pk, buyer=request.user)
-        if order.status != Order.STATUS_PENDING_PAYMENT:
+        if not order.can_transition_to(Order.STATUS_CANCELLED):
             return Response(
                 {"detail": f"当前订单状态为「{order.get_status_display()}」，无法取消"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         order.status = Order.STATUS_CANCELLED
+        order.cancel_time = timezone.now()
         order.save()
         serializer = OrderSerializer(order, context={'request': request})
         return Response({"detail": "订单已取消", "data": serializer.data})
@@ -223,7 +244,7 @@ class OrderConfirmView(APIView):
 
     def post(self, request, pk):
         order = get_object_or_404(Order, pk=pk, buyer=request.user)
-        if order.status != Order.STATUS_PENDING_RECEIPT:
+        if not order.can_transition_to(Order.STATUS_COMPLETED):
             return Response(
                 {"detail": f"当前订单状态为「{order.get_status_display()}」，无法确认收货"},
                 status=status.HTTP_400_BAD_REQUEST
@@ -238,6 +259,28 @@ class StandardResultsSetPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'
     max_page_size = 50
+
+
+class AdminOrderShipView(APIView):
+    """管理员发货：PENDING_SHIPMENT → PENDING_RECEIPT"""
+    permission_classes = [IsAdminUser]
+
+    def post(self, request, pk):
+        order = get_object_or_404(Order, pk=pk)
+        if not order.can_transition_to(Order.STATUS_PENDING_RECEIPT):
+            return Response(
+                {"detail": f"当前订单状态为「{order.get_status_display()}」，无法发货"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        tracking_number = request.data.get('tracking_number', '')
+        shipping_company = request.data.get('shipping_company', '')
+        order.status = Order.STATUS_PENDING_RECEIPT
+        order.shipped_at = timezone.now()
+        order.tracking_number = tracking_number
+        order.shipping_company = shipping_company
+        order.save()
+        serializer = OrderSerializer(order, context={'request': request})
+        return Response({"detail": "发货成功", "data": serializer.data})
 
 
 class ProductSearchView(generics.ListAPIView):

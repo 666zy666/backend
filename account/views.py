@@ -1,4 +1,3 @@
-# 密码登录account/views.py
 from django.conf import settings
 from django.contrib.auth import authenticate
 from rest_framework.views import APIView
@@ -12,6 +11,7 @@ from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db.models import Q, Sum
+from django.shortcuts import get_object_or_404
 from .models import UserProfile, Address
 from .serializers import UserProfileSerializer, ChangePasswordSerializer, AddressSerializer
 from store.models import Product, Order
@@ -327,3 +327,129 @@ class AvatarUploadView(APIView):
             avatar_url = request.build_absolute_uri(profile.avatar.url)
 
         return Response({"avatar": avatar_url}, status=status.HTTP_200_OK)
+
+
+# ── 管理员认证 ─────────────────────────────────────────────────
+
+class AdminLoginView(APIView):
+    """管理员登录"""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        username = request.data.get('username')
+        password = request.data.get('password')
+        if not username or not password:
+            return Response({"detail": "请输入用户名和密码"}, status=400)
+
+        user = authenticate(username=username, password=password)
+        if not user:
+            return Response({"detail": "用户名或密码错误"}, status=400)
+        if not user.is_staff:
+            return Response({"detail": "无管理员权限"}, status=403)
+
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response({
+            "token": token.key,
+            "user_id": user.id,
+            "username": user.username,
+            "is_staff": user.is_staff,
+        })
+
+
+class AdminMeView(APIView):
+    """获取当前管理员信息"""
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        user = request.user
+        return Response({
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "is_staff": user.is_staff,
+            "is_superuser": user.is_superuser,
+            "date_joined": user.date_joined,
+        })
+
+
+# ── 管理员用户详情 ────────────────────────────────────────────
+
+class AdminUserDetailView(APIView):
+    """管理员查看/修改用户详情"""
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, pk):
+        user = get_object_or_404(User, pk=pk)
+        profile = getattr(user, 'userprofile', None)
+        return Response({
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "phone": profile.phone if profile else '',
+            "is_staff": user.is_staff,
+            "is_active": user.is_active,
+            "date_joined": user.date_joined,
+        })
+
+    def patch(self, request, pk):
+        user = get_object_or_404(User, pk=pk)
+        is_active = request.data.get('is_active')
+        if is_active is not None:
+            user.is_active = bool(is_active)
+            user.save(update_fields=['is_active'])
+        return Response({"detail": "更新成功", "is_active": user.is_active})
+
+
+# ── 管理员商品管理 ────────────────────────────────────────────
+
+class AdminProductDetailView(APIView):
+    """管理员商品详情 / 修改"""
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, pk):
+        from store.serializers import ProductSerializer
+        product = get_object_or_404(Product, pk=pk)
+        return Response(ProductSerializer(product, context={'request': request}).data)
+
+    def put(self, request, pk):
+        from store.serializers import ProductSerializer
+        product = get_object_or_404(Product, pk=pk)
+        serializer = ProductSerializer(product, data=request.data, partial=True, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def delete(self, request, pk):
+        product = get_object_or_404(Product, pk=pk)
+        product.is_active = False
+        product.save(update_fields=['is_active'])
+        return Response({"detail": "商品已下架（软删除）"}, status=status.HTTP_200_OK)
+
+
+class AdminProductStatusView(APIView):
+    """管理员设置商品上下架"""
+    permission_classes = [IsAdminUser]
+
+    def patch(self, request, pk):
+        product = get_object_or_404(Product, pk=pk)
+        is_active = request.data.get('is_active')
+        if is_active is None:
+            return Response({"detail": "缺少 is_active 字段"}, status=400)
+        product.is_active = bool(is_active)
+        product.save(update_fields=['is_active'])
+        return Response({
+            "detail": "状态已更新",
+            "is_active": product.is_active,
+        })
+
+
+# ── 管理员订单详情 ────────────────────────────────────────────
+
+class AdminOrderDetailView(APIView):
+    """管理员查看订单详情"""
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, pk):
+        from store.serializers import OrderSerializer
+        order = get_object_or_404(Order, pk=pk)
+        return Response(OrderSerializer(order, context={'request': request}).data)
