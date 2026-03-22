@@ -66,13 +66,16 @@ class Order(models.Model):
     seller = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders_sold')
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     price = models.DecimalField(max_digits=12, decimal_places=2)
+
     STATUS_PENDING_PAYMENT = 'pending_payment'
+    STATUS_PENDING_SHIPMENT = 'pending_shipment'
     STATUS_PENDING_RECEIPT = 'pending_receipt'
     STATUS_COMPLETED = 'completed'
     STATUS_CANCELLED = 'cancelled'
 
     STATUS_CHOICES = [
         (STATUS_PENDING_PAYMENT, '待付款'),
+        (STATUS_PENDING_SHIPMENT, '待发货'),
         (STATUS_PENDING_RECEIPT, '待收货'),
         (STATUS_COMPLETED, '已完成'),
         (STATUS_CANCELLED, '已取消'),
@@ -82,15 +85,27 @@ class Order(models.Model):
         ('shipped', '已发货'),
     ]
 
+    # Valid state transitions
+    VALID_TRANSITIONS = {
+        STATUS_PENDING_PAYMENT: [STATUS_PENDING_SHIPMENT, STATUS_CANCELLED],
+        STATUS_PENDING_SHIPMENT: [STATUS_PENDING_RECEIPT],
+        STATUS_PENDING_RECEIPT: [STATUS_COMPLETED],
+        STATUS_COMPLETED: [],
+        STATUS_CANCELLED: [],
+    }
+
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
         default=STATUS_PENDING_PAYMENT
     )
+    order_no = models.CharField("订单号", max_length=32, unique=True, blank=True, null=True)
+    address_snapshot = models.JSONField("收货地址快照", null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     paid_at = models.DateTimeField(null=True, blank=True)
     shipped_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    cancel_time = models.DateTimeField("取消时间", null=True, blank=True)
     transaction_id = models.CharField(max_length=100, blank=True, null=True)
     tracking_number = models.CharField("物流单号", max_length=100, blank=True, null=True)
     shipping_company = models.CharField("物流公司", max_length=100, blank=True, null=True)
@@ -99,7 +114,12 @@ class Order(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f"Order {self.id} by {self.buyer}"
+        return f"Order {self.order_no or self.id} by {self.buyer}"
+
+    def can_transition_to(self, new_status):
+        """Check whether the current status allows transitioning to new_status."""
+        allowed = self.VALID_TRANSITIONS.get(self.status, [])
+        return new_status in allowed
 
 class Banner(models.Model):
     title = models.CharField(max_length=100, blank=True, verbose_name="标题")
