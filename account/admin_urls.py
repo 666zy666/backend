@@ -5,6 +5,7 @@ from .admin_views import (
     AdminAuthLoginView,
     AdminAuthMeView,
     AdminDashboardOverviewView,
+    AdminDashboardTrendView,
     AdminUserListView,
     AdminUserDetailView,
     AdminProductListView,
@@ -12,6 +13,8 @@ from .admin_views import (
     AdminOrderListView,
     AdminOrderDetailView,
     AdminOrderStatusView,
+    AdminBannerListView,
+    AdminBannerDetailView,
 )
 
 urlpatterns = [
@@ -21,6 +24,7 @@ urlpatterns = [
 
     # Dashboard
     path('dashboard/overview/', AdminDashboardOverviewView.as_view(), name='admin-dashboard-overview'),
+    path('dashboard/trend/', AdminDashboardTrendView.as_view(), name='admin-dashboard-trend'),
 
     # Users
     path('users/', AdminUserListView.as_view(), name='admin-users'),
@@ -34,4 +38,8 @@ urlpatterns = [
     path('orders/', AdminOrderListView.as_view(), name='admin-orders'),
     path('orders/<int:pk>/', AdminOrderDetailView.as_view(), name='admin-order-detail'),
     path('orders/<int:pk>/status/', AdminOrderStatusView.as_view(), name='admin-order-status'),
+
+    # Banners
+    path('banners/', AdminBannerListView.as_view(), name='admin-banners'),
+    path('banners/<int:pk>/', AdminBannerDetailView.as_view(), name='admin-banner-detail'),
 ]

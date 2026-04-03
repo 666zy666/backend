@@ -5,6 +5,7 @@ All views require the request user to be is_staff=True (IsAdminUser).
 The only exception is AdminAuthLoginView which is open (AllowAny).
 """
 import logging
+from datetime import timedelta
 
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
@@ -17,13 +18,13 @@ from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAdminUser
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import UserProfile
-from store.models import Product, Order, Category
-from store.serializers import ProductSerializer, OrderSerializer
+from store.models import Product, Order, Category, Banner
+from store.serializers import ProductSerializer, OrderSerializer, BannerSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -140,10 +141,46 @@ class AdminDashboardOverviewView(APIView):
         })
 
 
+class AdminDashboardTrendView(APIView):
+    """GET /api/admin/dashboard/trend/ — last-7-day order trend."""
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        today = timezone.localdate()
+        trend = []
+        for i in range(6, -1, -1):
+            day = today - timedelta(days=i)
+            day_start = timezone.make_aware(
+                timezone.datetime.combine(day, timezone.datetime.min.time())
+            )
+            day_end = timezone.make_aware(
+                timezone.datetime.combine(day, timezone.datetime.max.time())
+            )
+            qs = Order.objects.filter(created_at__range=(day_start, day_end))
+            order_count = qs.count()
+            revenue = (
+                qs.filter(
+                    status__in=[
+                        Order.STATUS_COMPLETED,
+                        Order.STATUS_PENDING_RECEIPT,
+                        Order.STATUS_PENDING_SHIPMENT,
+                    ]
+                ).aggregate(total=Sum('price'))['total'] or 0
+            )
+            trend.append({
+                "date": str(day),
+                "order_count": order_count,
+                "revenue": str(revenue),
+            })
+        return Response({"trend": trend})
+
+
 # ── Users ─────────────────────────────────────────────────────────────────────
 
 class AdminUserListView(APIView):
-    """GET /api/admin/users/"""
+    """GET /api/admin/users/ — list with pagination & filters.
+       POST /api/admin/users/ — create a new user.
+    """
     permission_classes = [IsAdminUser]
 
     def get(self, request):
@@ -186,13 +223,51 @@ class AdminUserListView(APIView):
             })
         return paginator.get_paginated_response(data)
 
+    def post(self, request):
+        """POST /api/admin/users/ — create a new user."""
+        username = request.data.get('username', '').strip()
+        password = request.data.get('password', '')
+        email = request.data.get('email', '').strip()
+        phone = request.data.get('phone', '').strip()
+        is_staff = request.data.get('is_staff', False)
+
+        if not username:
+            return Response({"detail": "用户名不能为空"}, status=400)
+        if not password:
+            return Response({"detail": "密码不能为空"}, status=400)
+        if User.objects.filter(username=username).exists():
+            return Response({"detail": "用户名已存在"}, status=400)
+
+        if isinstance(is_staff, str):
+            is_staff = is_staff.lower() in ('true', '1', 'yes')
+
+        user = User.objects.create_user(
+            username=username,
+            password=password,
+            email=email,
+            is_staff=bool(is_staff),
+        )
+        if phone:
+            UserProfile.objects.update_or_create(
+                user=user, defaults={'phone': phone}
+            )
+        logger.info("Admin %s created user id=%s", request.user.username, user.id)
+        return Response({
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "phone": phone,
+            "is_staff": user.is_staff,
+            "is_active": user.is_active,
+            "date_joined": user.date_joined,
+        }, status=status.HTTP_201_CREATED)
+
 
 class AdminUserDetailView(APIView):
-    """GET/PATCH /api/admin/users/{id}/"""
+    """GET/PATCH/DELETE /api/admin/users/{id}/"""
     permission_classes = [IsAdminUser]
 
-    def get(self, request, pk):
-        user = get_object_or_404(User, pk=pk)
+    def _serialize_user(self, user, request):
         profile = getattr(user, 'userprofile', None)
         avatar_url = ''
         if profile and profile.avatar:
@@ -200,7 +275,7 @@ class AdminUserDetailView(APIView):
                 avatar_url = request.build_absolute_uri(profile.avatar.url)
             except Exception:
                 avatar_url = ''
-        return Response({
+        return {
             "id": user.id,
             "username": user.username,
             "email": user.email,
@@ -209,7 +284,11 @@ class AdminUserDetailView(APIView):
             "is_staff": user.is_staff,
             "is_active": user.is_active,
             "date_joined": user.date_joined,
-        })
+        }
+
+    def get(self, request, pk):
+        user = get_object_or_404(User, pk=pk)
+        return Response(self._serialize_user(user, request))
 
     def patch(self, request, pk):
         user = get_object_or_404(User, pk=pk)
@@ -230,6 +309,25 @@ class AdminUserDetailView(APIView):
             user.is_staff = bool(is_staff)
             changed.append('is_staff')
 
+        email = request.data.get('email')
+        if email is not None:
+            user.email = email.strip()
+            changed.append('email')
+
+        new_username = request.data.get('username')
+        if new_username is not None:
+            new_username = new_username.strip()
+            if new_username and new_username != user.username:
+                if User.objects.filter(username=new_username).exclude(pk=pk).exists():
+                    return Response({"detail": "用户名已存在"}, status=400)
+                user.username = new_username
+                changed.append('username')
+
+        password = request.data.get('password')
+        if password:
+            user.set_password(password)
+            changed.append('password')
+
         if changed:
             user.save(update_fields=changed)
             logger.info(
@@ -237,12 +335,27 @@ class AdminUserDetailView(APIView):
                 request.user.username, pk, changed
             )
 
+        # Update phone if provided
+        phone = request.data.get('phone')
+        if phone is not None:
+            UserProfile.objects.update_or_create(
+                user=user, defaults={'phone': phone.strip()}
+            )
+
         return Response({
             "detail": "更新成功",
-            "id": user.id,
-            "is_active": user.is_active,
-            "is_staff": user.is_staff,
+            **self._serialize_user(user, request),
         })
+
+    def delete(self, request, pk):
+        user = get_object_or_404(User, pk=pk)
+        if user == request.user:
+            return Response({"detail": "不能删除当前登录账号"}, status=400)
+        user_id = user.id
+        username = user.username
+        user.delete()
+        logger.info("Admin %s deleted user id=%s username=%s", request.user.username, user_id, username)
+        return Response({"detail": "用户已删除"}, status=status.HTTP_200_OK)
 
 
 # ── Products ──────────────────────────────────────────────────────────────────
@@ -364,11 +477,27 @@ class AdminOrderListView(APIView):
 
 
 class AdminOrderDetailView(APIView):
-    """GET /api/admin/orders/{id}/"""
+    """GET/DELETE /api/admin/orders/{id}/"""
     permission_classes = [IsAdminUser]
 
     def get(self, request, pk):
         order = get_object_or_404(Order, pk=pk)
+        return Response(OrderSerializer(order, context={'request': request}).data)
+
+    def delete(self, request, pk):
+        """Cancel order (set status to cancelled). Hard-delete only if already cancelled."""
+        order = get_object_or_404(Order, pk=pk)
+        if order.status == Order.STATUS_CANCELLED:
+            order_id = order.id
+            order.delete()
+            logger.info("Admin %s hard-deleted cancelled order id=%s", request.user.username, order_id)
+            return Response({"detail": "订单已删除"}, status=status.HTTP_200_OK)
+        if order.status == Order.STATUS_COMPLETED:
+            return Response({"detail": "已完成的订单不可删除"}, status=400)
+        order.status = Order.STATUS_CANCELLED
+        order.cancel_time = tz_now()
+        order.save(update_fields=['status', 'cancel_time'])
+        logger.info("Admin %s cancelled order id=%s", request.user.username, pk)
         return Response(OrderSerializer(order, context={'request': request}).data)
 
 
@@ -416,3 +545,63 @@ class AdminOrderStatusView(APIView):
             request.user.username, pk, old_status, new_status,
         )
         return Response(OrderSerializer(order, context={'request': request}).data)
+
+
+# ── Banners ───────────────────────────────────────────────────────────────────
+
+class AdminBannerListView(APIView):
+    """GET /api/admin/banners/ — list all banners (including inactive).
+       POST /api/admin/banners/ — create a banner.
+    """
+    permission_classes = [IsAdminUser]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get(self, request):
+        is_active_filter = request.query_params.get('is_active', '').strip()
+        queryset = Banner.objects.all().order_by('order', 'id')
+        if is_active_filter == 'true':
+            queryset = queryset.filter(is_active=True)
+        elif is_active_filter == 'false':
+            queryset = queryset.filter(is_active=False)
+
+        paginator = AdminPagination()
+        page_qs = paginator.paginate_queryset(queryset, request)
+        serializer = BannerSerializer(page_qs, many=True, context={'request': request})
+        return paginator.get_paginated_response(serializer.data)
+
+    def post(self, request):
+        """POST /api/admin/banners/ — create a banner."""
+        serializer = BannerSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        banner = serializer.save()
+        logger.info("Admin %s created banner id=%s", request.user.username, banner.id)
+        return Response(
+            BannerSerializer(banner, context={'request': request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class AdminBannerDetailView(APIView):
+    """GET/PUT/DELETE /api/admin/banners/{id}/"""
+    permission_classes = [IsAdminUser]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get(self, request, pk):
+        banner = get_object_or_404(Banner, pk=pk)
+        return Response(BannerSerializer(banner, context={'request': request}).data)
+
+    def put(self, request, pk):
+        banner = get_object_or_404(Banner, pk=pk)
+        serializer = BannerSerializer(
+            banner, data=request.data, partial=True, context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        logger.info("Admin %s updated banner id=%s", request.user.username, pk)
+        return Response(BannerSerializer(banner, context={'request': request}).data)
+
+    def delete(self, request, pk):
+        banner = get_object_or_404(Banner, pk=pk)
+        banner.delete()
+        logger.info("Admin %s deleted banner id=%s", request.user.username, pk)
+        return Response({"detail": "轮播图已删除"}, status=status.HTTP_200_OK)

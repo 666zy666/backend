@@ -3,16 +3,17 @@ Tests for the Admin management API.
 
 Covers:
 - Permission interception (non-admin is rejected with 403)
-- Dashboard overview
-- User management (list, detail, patch)
+- Dashboard overview and trend
+- User management (list, detail, create, patch, delete)
 - Product management (list, detail, create, put, delete)
-- Order management (list, detail, patch status)
+- Order management (list, detail, patch status, delete/cancel)
+- Banner management (list, create, detail, update, delete)
 """
 from django.test import TestCase
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
-from store.models import Category, Product, Order
+from store.models import Category, Product, Order, Banner
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -337,3 +338,187 @@ class AdminOrderTests(TestCase):
             {'status': Order.STATUS_CANCELLED},
         )
         self.assertEqual(r.status_code, 404)
+
+
+# ── Dashboard trend ───────────────────────────────────────────────────────────
+
+class AdminDashboardTrendTests(TestCase):
+    def setUp(self):
+        self.admin = make_user('trend_admin', is_staff=True)
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+
+    def test_trend_returns_7_days(self):
+        r = self.client.get('/api/admin/dashboard/trend/')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('trend', r.data)
+        self.assertEqual(len(r.data['trend']), 7)
+
+    def test_trend_day_has_expected_keys(self):
+        r = self.client.get('/api/admin/dashboard/trend/')
+        day = r.data['trend'][0]
+        for key in ('date', 'order_count', 'revenue'):
+            self.assertIn(key, day)
+
+    def test_trend_requires_admin(self):
+        regular = make_user('trend_regular')
+        self.client.force_authenticate(regular)
+        r = self.client.get('/api/admin/dashboard/trend/')
+        self.assertEqual(r.status_code, 403)
+
+
+# ── User create / delete ──────────────────────────────────────────────────────
+
+class AdminUserCreateDeleteTests(TestCase):
+    def setUp(self):
+        self.admin = make_user('ucreate_admin', is_staff=True)
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+
+    def test_create_user_success(self):
+        r = self.client.post('/api/admin/users/', {
+            'username': 'newbie',
+            'password': 'securepass',
+            'email': 'newbie@example.com',
+        }, format='json')
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data['username'], 'newbie')
+        self.assertTrue(User.objects.filter(username='newbie').exists())
+
+    def test_create_user_duplicate_username_returns_400(self):
+        make_user('dup_user')
+        r = self.client.post('/api/admin/users/', {
+            'username': 'dup_user',
+            'password': 'pass',
+        }, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_create_user_missing_username_returns_400(self):
+        r = self.client.post('/api/admin/users/', {'password': 'pass'}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_create_user_missing_password_returns_400(self):
+        r = self.client.post('/api/admin/users/', {'username': 'nopass'}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_delete_user_success(self):
+        target = make_user('to_delete')
+        r = self.client.delete(f'/api/admin/users/{target.pk}/')
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(User.objects.filter(pk=target.pk).exists())
+
+    def test_delete_self_returns_400(self):
+        r = self.client.delete(f'/api/admin/users/{self.admin.pk}/')
+        self.assertEqual(r.status_code, 400)
+
+    def test_delete_nonexistent_returns_404(self):
+        r = self.client.delete('/api/admin/users/99999/')
+        self.assertEqual(r.status_code, 404)
+
+    def test_patch_email_and_username(self):
+        target = make_user('patch_target')
+        r = self.client.patch(
+            f'/api/admin/users/{target.pk}/',
+            {'email': 'new@example.com', 'username': 'patch_target_new'},
+            format='json',
+        )
+        self.assertEqual(r.status_code, 200)
+        target.refresh_from_db()
+        self.assertEqual(target.email, 'new@example.com')
+        self.assertEqual(target.username, 'patch_target_new')
+
+
+# ── Order cancel / delete ─────────────────────────────────────────────────────
+
+class AdminOrderCancelDeleteTests(TestCase):
+    def setUp(self):
+        self.admin = make_user('ocancel_admin', is_staff=True)
+        self.buyer = make_user('ocancel_buyer')
+        self.seller = make_user('ocancel_seller')
+        self.product = make_product(self.seller)
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+
+    def test_delete_pending_order_cancels_it(self):
+        order = make_order(self.buyer, self.seller, self.product)
+        r = self.client.delete(f'/api/admin/orders/{order.pk}/')
+        self.assertEqual(r.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.STATUS_CANCELLED)
+        self.assertIsNotNone(order.cancel_time)
+
+    def test_delete_already_cancelled_order_removes_it(self):
+        order = make_order(self.buyer, self.seller, self.product, status=Order.STATUS_CANCELLED)
+        pk = order.pk
+        r = self.client.delete(f'/api/admin/orders/{pk}/')
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(Order.objects.filter(pk=pk).exists())
+
+    def test_delete_completed_order_returns_400(self):
+        order = make_order(self.buyer, self.seller, self.product, status=Order.STATUS_COMPLETED)
+        r = self.client.delete(f'/api/admin/orders/{order.pk}/')
+        self.assertEqual(r.status_code, 400)
+
+    def test_delete_nonexistent_returns_404(self):
+        r = self.client.delete('/api/admin/orders/99999/')
+        self.assertEqual(r.status_code, 404)
+
+
+# ── Banner management ─────────────────────────────────────────────────────────
+
+class AdminBannerTests(TestCase):
+    def setUp(self):
+        self.admin = make_user('banner_admin', is_staff=True)
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+        self.banner = Banner.objects.create(title='Test Banner', order=1, is_active=True)
+
+    def test_list_returns_paginated(self):
+        r = self.client.get('/api/admin/banners/')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('count', r.data)
+        self.assertIn('results', r.data)
+        self.assertGreaterEqual(r.data['count'], 1)
+
+    def test_list_filter_by_active(self):
+        Banner.objects.create(title='Inactive Banner', order=2, is_active=False)
+        r = self.client.get('/api/admin/banners/?is_active=true')
+        self.assertEqual(r.status_code, 200)
+        for item in r.data['results']:
+            self.assertTrue(item['is_active'])
+
+    def test_detail_returns_banner(self):
+        r = self.client.get(f'/api/admin/banners/{self.banner.pk}/')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data['title'], 'Test Banner')
+
+    def test_detail_nonexistent_returns_404(self):
+        r = self.client.get('/api/admin/banners/99999/')
+        self.assertEqual(r.status_code, 404)
+
+    def test_put_updates_title_and_is_active(self):
+        r = self.client.put(
+            f'/api/admin/banners/{self.banner.pk}/',
+            {'title': 'Updated Banner', 'is_active': False},
+            format='json',
+        )
+        self.assertEqual(r.status_code, 200)
+        self.banner.refresh_from_db()
+        self.assertEqual(self.banner.title, 'Updated Banner')
+        self.assertFalse(self.banner.is_active)
+
+    def test_delete_banner(self):
+        pk = self.banner.pk
+        r = self.client.delete(f'/api/admin/banners/{pk}/')
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(Banner.objects.filter(pk=pk).exists())
+
+    def test_delete_nonexistent_returns_404(self):
+        r = self.client.delete('/api/admin/banners/99999/')
+        self.assertEqual(r.status_code, 404)
+
+    def test_banner_requires_admin(self):
+        regular = make_user('banner_regular')
+        self.client.force_authenticate(regular)
+        r = self.client.get('/api/admin/banners/')
+        self.assertEqual(r.status_code, 403)
