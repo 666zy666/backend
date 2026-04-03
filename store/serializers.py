@@ -64,6 +64,7 @@ class OrderSerializer(serializers.ModelSerializer):
 
 class BannerSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField()
+    image_upload = serializers.ImageField(write_only=True, required=False, source='image')
 
     def get_image(self, obj):
         request = self.context.get('request')
@@ -73,5 +74,6 @@ class BannerSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Banner
-        fields = ['id', 'title', 'image', 'link', 'order']
+        fields = ['id', 'title', 'image', 'image_upload', 'link', 'order', 'is_active', 'created_at']
+        read_only_fields = ['id', 'created_at']
 
